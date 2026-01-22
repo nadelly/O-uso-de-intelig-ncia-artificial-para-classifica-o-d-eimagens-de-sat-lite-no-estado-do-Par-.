@@ -1,0 +1,95 @@
+// =============================
+// Visualização lado a lado + Export automático
+// =============================
+
+// --- 1) Ponto / AOI
+var point = ee.Geometry.Point([-52.18175834,-3.83010673]);
+var aoi = point.buffer(5000);
+
+// --- 2) Parâmetros de data e nuvem
+var startDate = '2024-01-01';
+var endDate = '2024-12-31';
+var cloudThreshold = 10;
+var maxToShow = 3; // quantas imagens mostrar lado a lado
+
+// --- 3) Buscar coleção Landsat 8 SR
+var colecao = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+  .filterBounds(aoi)
+  .filterDate(startDate, endDate)
+  .filter(ee.Filter.lt('CLOUD_COVER', cloudThreshold))
+  .sort('CLOUD_COVER');
+
+var count = colecao.size().getInfo();
+print('Imagens disponíveis:', count);
+
+if (count === 0) {
+  print('Nenhuma imagem encontrada com esses filtros.');
+} else {
+  var nShow = Math.min(maxToShow, count);
+  var lista = colecao.toList(nShow);
+
+  // --- 4) Função que prepara RGB para visualização
+  function prepararRGB(image) {
+    return ee.Image(image)
+             .select(['SR_B4','SR_B3','SR_B2'])
+             .multiply(0.0000275)
+             .add(-0.2);
+  }
+
+  // --- 5) Painel horizontal para os mapas
+  var mapsPanel = ui.Panel({
+    layout: ui.Panel.Layout.flow('horizontal'),
+    style: {stretch: 'horizontal'}
+  });
+
+  var titulo = ui.Label('Comparação RGB — selecione a imagem desejada visualmente', 
+    {fontWeight: 'bold', fontSize: '14px', margin: '8px 0 8px 0'});
+  ui.root.clear();
+  ui.root.add(titulo);
+  ui.root.add(mapsPanel);
+
+  // --- 6) Loop para mostrar mapas e exportar imagens
+  for (var i = 0; i < nShow; i++) {
+    (function(i) {
+      var img = ee.Image(lista.get(i));
+      var dataStr = ee.Date(img.get('system:time_start')).format('YYYY-MM-dd').getInfo();
+      var imgRGB = prepararRGB(img).clip(aoi);
+
+      // Mapa individual
+      var map_i = ui.Map();
+      map_i.setOptions('SATELLITE');
+      map_i.centerObject(aoi, 10);
+      map_i.addLayer(imgRGB, {bands: ['SR_B4','SR_B3','SR_B2'], min:0, max:0.3, gamma:1.2}, 'RGB ' + dataStr);
+
+      // Painel vertical
+      var subPanel = ui.Panel({
+        widgets: [
+          ui.Label('Data: ' + dataStr, {fontWeight: 'bold', margin: '4px 8px'}),
+          map_i
+        ],
+        layout: ui.Panel.Layout.flow('vertical'),
+        style: {width: (100 / nShow) + '%', margin: '0px 4px 0px 4px'}
+      });
+
+      mapsPanel.add(subPanel);
+
+      // --- 7) Exportar apenas bandas SR_B1 a SR_B7 (corrige erro de tipo)
+      var bandasExport = ['SR_B1','SR_B2','SR_B3','SR_B4','SR_B5','SR_B6','SR_B7'];
+
+      Export.image.toDrive({
+        image: img.select(bandasExport).clip(aoi),
+        description: 'Landsat8_' + dataStr,
+        folder: 'EarthEngine',
+        fileNamePrefix: 'Landsat8_' + dataStr,
+        scale: 30,
+        region: aoi,
+        maxPixels: 1e13
+      });
+
+    })(i);
+  }
+
+  // --- 8) Sincronizar navegação dos mapas
+  var mapList = mapsPanel.widgets().map(function(w){ return w.widgets().get(1); });
+  var linker = ui.Map.Linker(mapList);
+}
