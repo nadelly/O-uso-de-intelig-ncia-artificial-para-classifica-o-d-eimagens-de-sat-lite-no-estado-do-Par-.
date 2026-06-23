@@ -11,3 +11,5 @@ Produção de mapas temáticos e informações espaciais para apoio à tomada de
 A partir dele pode-se gerar amostras independentes ou usar o csv anexado.
 
 Para classificar suas imagens, basta utilizar o modelo_treiando.
+
+Metodologia completa no pdf.
